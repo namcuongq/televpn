@@ -127,7 +127,7 @@ func (t *TeleVpnClient) setupPublic(dev *tun.DevReadWriteCloser) error {
 			return err
 		}
 
-		t.mySocket, err = network.ConnectWebSocket(t.defaultDialerWS,
+		conn, err := network.ConnectWebSocket(t.defaultDialerWS,
 			t.urlServerWS+DEFAULT_PATH_VPN,
 			t.config.HostHeader, t.config.User, authenData)
 		if err != nil {
@@ -135,9 +135,11 @@ func (t *TeleVpnClient) setupPublic(dev *tun.DevReadWriteCloser) error {
 			return err
 		}
 
+		t.publicWS = NewPublicWebSocket(conn)
+
 		go func() {
 			for {
-				_, message, err := t.mySocket.ReadMessage()
+				_, message, err := conn.ReadMessage()
 				if err != nil {
 					break
 				}
@@ -152,21 +154,19 @@ func (t *TeleVpnClient) setupPublic(dev *tun.DevReadWriteCloser) error {
 		go func() {
 			ticker := time.NewTicker(time.Duration(t.config.TTL) * time.Second)
 			defer func() {
-				t.mySocket.Close()
+				conn.Close()
 				ticker.Stop()
 			}()
 
 			for {
 				select {
 				case <-ticker.C:
-					log.Trace("send ping", t.mySocket.RemoteAddr())
-					err := t.mySocket.WriteMessage(websocket.TextMessage, []byte("ping"))
+					log.Trace("send ping", conn.RemoteAddr())
+					err := t.publicWS.Send([]byte("ping"))
 					if err != nil {
 						log.Error("send ping error", err)
-						// if strings.Contains(err.Error(), "An established connection was aborted") {
 						t.chanErrorConnect <- true
 						return
-						// }
 					}
 				}
 			}
@@ -317,8 +317,8 @@ func (t *TeleVpnClient) forwardTransportFromIo(dev io.ReadWriteCloser, mtu int, 
 		}
 
 		packetHeader := network.ParseHeaderPacket(buf[:recvLen])
-		if t.config.Public && t.mySocket != nil && t.vpnNetwork.Contains(packetHeader.IPDst) {
-			t.mySocket.WriteMessage(websocket.BinaryMessage, buf[:recvLen])
+		if t.config.Public && t.vpnNetwork.Contains(packetHeader.IPDst) {
+			t.publicWS.Send(buf[:recvLen])
 			continue
 		}
 

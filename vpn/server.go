@@ -5,7 +5,6 @@ import (
 	"net"
 	"net/http"
 	"strings"
-	"sync"
 	"televpn/core"
 	"televpn/log"
 	"televpn/network"
@@ -21,30 +20,6 @@ type slashFix struct {
 const (
 	ERROR_AUTHENFAIL = "Authentication failed"
 )
-
-type Client struct {
-	mu   sync.Mutex
-	data map[string]*websocket.Conn
-}
-
-func (c *Client) AddNill(ip string) {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	c.data[ip] = nil
-}
-
-func (c *Client) Set(ip string, conn *websocket.Conn) {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	c.data[ip] = conn
-}
-
-func (c *Client) Get(ip string) (*websocket.Conn, bool) {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	conn, found := c.data[ip]
-	return conn, found
-}
 
 func (h *slashFix) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	r.URL.Path = strings.Replace(r.URL.Path, "//", "/", -1)

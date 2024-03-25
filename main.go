@@ -15,8 +15,8 @@ var (
 )
 
 const (
-	VERSION = "1.0.0"
-	RELEASE = "(25/03/2024)"
+	VERSION = "1.0.1"
+	RELEASE = "(26/03/2024)"
 )
 
 func main() {

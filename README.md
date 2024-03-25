@@ -1,4 +1,4 @@
-# ﻿TeleVPN
+# TeleVPN
 A VPN implementation written in Go.
 
 ## How it works

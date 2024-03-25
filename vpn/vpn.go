@@ -2,6 +2,7 @@ package vpn
 
 import (
 	"net"
+	"sync"
 	"televpn/core"
 	"televpn/network"
 
@@ -14,8 +15,8 @@ type TeleVpnClient struct {
 	defaultDialerWS  *websocket.Dialer
 	defaultDialerTCP net.Dialer
 	urlServerWS      string
-	mySocket         *websocket.Conn
 	vpnNetwork       *net.IPNet
+	publicWS         PublicWebSocket
 
 	key              []byte
 	Whitelist        map[string]bool
@@ -23,6 +24,45 @@ type TeleVpnClient struct {
 
 	Tun2Socket func(core.CommTCPConn, *websocket.Conn, []byte)
 	Socket2Tun func(*websocket.Conn, core.CommTCPConn, []byte)
+}
+
+type PublicWebSocket struct {
+	mu       sync.Mutex
+	mySocket *websocket.Conn
+}
+
+func NewPublicWebSocket(c *websocket.Conn) PublicWebSocket {
+	return PublicWebSocket{mySocket: c}
+}
+
+func (p *PublicWebSocket) Send(b []byte) error {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	return p.mySocket.WriteMessage(websocket.BinaryMessage, b)
+}
+
+type Client struct {
+	mu   sync.Mutex
+	data map[string]*websocket.Conn
+}
+
+func (c *Client) AddNill(ip string) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.data[ip] = nil
+}
+
+func (c *Client) Set(ip string, conn *websocket.Conn) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.data[ip] = conn
+}
+
+func (c *Client) Get(ip string) (*websocket.Conn, bool) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	conn, found := c.data[ip]
+	return conn, found
 }
 
 type TeleVpnServer struct {

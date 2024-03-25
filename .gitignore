@@ -2,5 +2,7 @@ config.toml
 main
 main.exe
 server.crt
+televpn
+televpn.exe
 test/
 wintun.dll
