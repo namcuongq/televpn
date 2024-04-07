@@ -51,15 +51,23 @@ func UUID() (uuid string) {
 }
 
 func CIDRToMask(ip string) string {
-	_, ipv4Net, _ := net.ParseCIDR(ip)
+	if !strings.Contains(ip, "/") {
+		ip = ip + "/32"
+	}
+	_, ipv4Net, err := net.ParseCIDR(ip)
+	if err != nil {
+		return ""
+	}
 	return ipv4MaskString(ipv4Net.Mask)
 }
 
 func GetIp(str string) string {
 	if strings.Contains(str, ":") {
 		return str[:strings.Index(str, ":")]
+	} else if strings.Contains(str, "/") {
+		return str[:strings.Index(str, "/")]
 	}
-	return str[:strings.Index(str, "/")]
+	return str
 }
 
 func ipv4MaskString(m []byte) string {

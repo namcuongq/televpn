@@ -28,6 +28,8 @@ type Config struct {
 	SSLKey string
 	SSLCrt string
 
+	Auto string
+
 	RedirectGateway string
 }
 

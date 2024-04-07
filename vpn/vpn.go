@@ -1,7 +1,9 @@
 package vpn
 
 import (
+	"log"
 	"net"
+	"net/http"
 	"sync"
 	"televpn/core"
 	"televpn/network"
@@ -68,8 +70,10 @@ func (c *Client) Get(ip string) (*websocket.Conn, bool) {
 type TeleVpnServer struct {
 	config Config
 
-	Users   map[string]User
-	Clients Client
+	Users      map[string]User
+	Clients    Client
+	httpMux    *http.ServeMux
+	httpServer *http.Server
 
 	Tun2Socket func(core.CommTCPConn, *websocket.Conn, []byte)
 	Socket2Tun func(*websocket.Conn, core.CommTCPConn, []byte)
@@ -82,4 +86,8 @@ const (
 
 func makeKey(u User) []byte {
 	return []byte(network.GetMD5Hash(u.Password + u.Ipaddress))
+}
+
+func httpLogger() *log.Logger {
+	return nil
 }

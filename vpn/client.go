@@ -9,7 +9,9 @@ import (
 	"io/ioutil"
 	"net"
 	"os"
+	"os/signal"
 	"strings"
+	"syscall"
 	"televpn/core"
 	"televpn/log"
 	"televpn/network"
@@ -60,6 +62,7 @@ func StartClient(c Config) error {
 	_, vpn.vpnNetwork, _ = net.ParseCIDR(vpn.config.Address + "/24")
 
 	vpn.setupAuthen()
+	vpn.handleExit()
 	err = vpn.setupWhiteList()
 	if err != nil {
 		return fmt.Errorf("setup whitelist err: %v", err)
@@ -79,6 +82,19 @@ func StartClient(c Config) error {
 	vpn.setProxyFunc()
 
 	return vpn.forwardTransportFromIo(dev, tunConfig.MTU, vpn.rawTcpForwarder, vpn.rawUdpForwarder)
+}
+
+func (t *TeleVpnClient) handleExit() {
+	c := make(chan os.Signal)
+	signal.Notify(c, os.Interrupt, syscall.SIGTERM)
+	go func() {
+		<-c
+		t.shutdown()
+	}()
+}
+
+func (t *TeleVpnClient) shutdown() {
+	os.Exit(1)
 }
 
 func (t *TeleVpnClient) setProxyFunc() {
@@ -112,7 +128,7 @@ func (t *TeleVpnClient) reconnectPublic(dev *tun.DevReadWriteCloser) {
 			}
 			if err != nil {
 				log.Info("Shutdown vpn!")
-				os.Exit(1)
+				t.shutdown()
 			}
 			log.Info("Connect server successful!")
 		}
@@ -194,6 +210,7 @@ func (t *TeleVpnClient) setupWhiteList() error {
 			t.Whitelist[host] = true
 		}
 	}
+
 	return nil
 }
 
@@ -225,7 +242,7 @@ func (t *TeleVpnClient) setupDialer(ip string) error {
 		return err
 	}
 
-	t.defaultDialerTCP = net.Dialer{LocalAddr: addr}
+	t.defaultDialerTCP = net.Dialer{LocalAddr: addr, Timeout: 5 * time.Second}
 	dialer := &t.defaultDialerTCP
 
 	t.defaultDialerWS = websocket.DefaultDialer
@@ -280,6 +297,7 @@ func (t *TeleVpnClient) rawUdpForwarder(conn core.CommUDPConn, ep core.CommEndpo
 		return err
 	}
 	defer remoteConn.Close()
+
 	go io.Copy(remoteConn, conn)
 	io.Copy(conn, remoteConn)
 	return nil

@@ -13,6 +13,7 @@ import (
 	"path"
 	"runtime"
 	"strings"
+	"televpn/network"
 
 	"golang.org/x/sys/windows"
 	"golang.zx2c4.com/wireguard/tun"
@@ -86,8 +87,12 @@ func checkWintunDLL() error {
 }
 
 func windowsRouteTraffic(tunDevice, src, dst string) error {
-	// execCommand(`netsh interface ipv4 add route 0.0.0.0/0 "tun0" 172.16.0.2 metric=1`)
-	routeCmd := exec.Command("netsh", "interface", "ipv4", "add", "route", src, tunDevice, dst, "metric=1")
+	iface, err := net.InterfaceByName(tunDevice)
+	if err != nil {
+		return err
+	}
+
+	routeCmd := exec.Command("route", "add", network.GetIp(src), "mask", network.CIDRToMask(src), dst, "IF", fmt.Sprintf("%d", iface.Index), "metric", "5")
 	output, err := routeCmd.CombinedOutput()
 	if err != nil {
 		return fmt.Errorf("route traffic to tun err: %v %s", err, string(output))

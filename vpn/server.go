@@ -2,6 +2,7 @@ package vpn
 
 import (
 	"encoding/base64"
+	"fmt"
 	"net"
 	"net/http"
 	"strings"
@@ -9,6 +10,7 @@ import (
 	"televpn/log"
 	"televpn/network"
 	"time"
+	_ "time/tzdata"
 
 	"github.com/fasthttp/websocket"
 )
@@ -19,6 +21,7 @@ type slashFix struct {
 
 const (
 	ERROR_AUTHENFAIL = "Authentication failed"
+	TIME_FORMAT      = "15:04"
 )
 
 func (h *slashFix) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -29,9 +32,85 @@ func (h *slashFix) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 func StartServer(config Config) error {
 	var vpn = &TeleVpnServer{}
 	vpn.config = config
-	vpn.setupAuthen()
 
+	vpn.setupCopyFunc()
+	err := vpn.setupCrontab()
+	if err != nil {
+		return err
+	}
+
+	vpn.setupAuthen()
 	return vpn.startHTTP()
+}
+
+func (t *TeleVpnServer) setupCopyFunc() {
+	if t.config.SSL { //ssl don't need encrypt body
+		t.Tun2Socket = func(ct core.CommTCPConn, c *websocket.Conn, b []byte) {
+			network.Tun2Socket(ct, c)
+		}
+		t.Socket2Tun = func(c *websocket.Conn, ct core.CommTCPConn, b []byte) {
+			network.Socket2Tun(c, ct)
+		}
+	} else {
+		t.Tun2Socket = network.Tun2SocketWithEn
+		t.Socket2Tun = network.Socket2TunWithEn
+	}
+}
+
+func (t *TeleVpnServer) setupCrontab() (err error) {
+	if len(t.config.Auto) > 0 {
+		autoArr := strings.Split(t.config.Auto, "-")
+		if len(autoArr) < 2 {
+			err = fmt.Errorf("Wrong DateTime Format")
+			return
+		}
+
+		var start, end time.Time
+		start, err = time.Parse(TIME_FORMAT, autoArr[0])
+		if err != nil {
+			return
+		}
+
+		end, err = time.Parse(TIME_FORMAT, autoArr[1])
+		if err != nil {
+			return
+		}
+
+		loc, _ := time.LoadLocation("Asia/Bangkok")
+		now := time.Now().In(loc)
+		nowTime, _ := time.Parse(TIME_FORMAT, fmt.Sprintf("%d:%d", now.Hour(), now.Minute()))
+		if end.Before(nowTime) {
+			end = end.Add(24 * time.Hour)
+		}
+
+		if start.Before(end) {
+			start = start.Add(24 * time.Hour)
+		}
+
+		sleepStop := end.Sub(nowTime)
+		sleepStart := start.Sub(end)
+
+		go func() {
+			for {
+				time.Sleep(sleepStop)
+				log.Debug("auto off http server")
+				t.Tun2Socket = func(ct core.CommTCPConn, c *websocket.Conn, b []byte) {
+					c.Close()
+				}
+				t.Socket2Tun = func(c *websocket.Conn, ct core.CommTCPConn, b []byte) {
+					c.Close()
+				}
+
+				time.Sleep(sleepStart)
+				log.Debug("auto on http server")
+				t.setupCopyFunc()
+
+				sleepStop = 24 * time.Hour
+			}
+		}()
+	}
+
+	return
 }
 
 func (t *TeleVpnServer) setupAuthen() {
@@ -81,23 +160,31 @@ func (t *TeleVpnServer) parseKeyUserAddr(authenHeader, token string) ([]byte, st
 }
 
 func (t *TeleVpnServer) startHTTP() error {
-	var upgrader = websocket.Upgrader{}
-	httpMux := http.NewServeMux()
+	t.setupHTTPHandle()
+	return t.runHTTP()
+}
 
-	if t.config.SSL { //ssl don't need encrypt body
-		t.Tun2Socket = func(ct core.CommTCPConn, c *websocket.Conn, b []byte) {
-			network.Tun2Socket(ct, c)
-		}
-		t.Socket2Tun = func(c *websocket.Conn, ct core.CommTCPConn, b []byte) {
-			network.Socket2Tun(c, ct)
-		}
-	} else {
-		t.Tun2Socket = network.Tun2SocketWithEn
-		t.Socket2Tun = network.Socket2TunWithEn
+func (t *TeleVpnServer) runHTTP() error {
+	t.httpServer = &http.Server{Addr: t.config.Server, Handler: &slashFix{t.httpMux}, ErrorLog: httpLogger()}
+	if t.config.SSL {
+		log.Info("Listen:", t.config.Server, "- SSL")
+		return t.httpServer.ListenAndServeTLS(t.config.SSLCrt, t.config.SSLKey)
 	}
 
+	log.Info("Listen:", t.config.Server, "- No SSL")
+	return t.httpServer.ListenAndServe()
+}
+
+func (t *TeleVpnServer) stopHTTP() error {
+	return t.httpServer.Close()
+}
+
+func (t *TeleVpnServer) setupHTTPHandle() {
+	var upgrader = websocket.Upgrader{}
+	t.httpMux = http.NewServeMux()
+
 	if t.config.SSL {
-		httpMux.HandleFunc(DEFAULT_PATH_VPN, func(w http.ResponseWriter, r *http.Request) {
+		t.httpMux.HandleFunc(DEFAULT_PATH_VPN, func(w http.ResponseWriter, r *http.Request) {
 			userEn := r.Header.Get("Etag")
 			authenData := r.Header.Get("X-Id")
 			key, user, addr, err := t.parseKeyUserAddr(userEn, authenData)
@@ -164,7 +251,7 @@ func (t *TeleVpnServer) startHTTP() error {
 
 	}
 
-	httpMux.HandleFunc(DEFAULT_PATH, func(w http.ResponseWriter, r *http.Request) {
+	t.httpMux.HandleFunc(DEFAULT_PATH, func(w http.ResponseWriter, r *http.Request) {
 		userEn := r.Header.Get("Etag")
 		authenData := r.Header.Get("X-Id")
 		key, _, addr, err := t.parseKeyUserAddr(userEn, authenData)
@@ -190,12 +277,4 @@ func (t *TeleVpnServer) startHTTP() error {
 		go t.Tun2Socket(remoteConn, currentConn, key)
 		t.Socket2Tun(currentConn, remoteConn, key)
 	})
-
-	if t.config.SSL {
-		log.Info("Listen:", t.config.Server, "- SSL")
-		return http.ListenAndServeTLS(t.config.Server, t.config.SSLCrt, t.config.SSLKey, &slashFix{httpMux})
-	}
-
-	log.Info("Listen:", t.config.Server, "- No SSL")
-	return http.ListenAndServe(t.config.Server, &slashFix{httpMux})
 }

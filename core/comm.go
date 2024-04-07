@@ -109,7 +109,7 @@ func NewDefaultStack(mtu int, tcpCallback ForwarderCall, udpCallback UdpForwarde
 	// 	var wq waiter.Queue
 	// 	ep, err := r.CreateEndpoint(&wq)
 	// 	if err != nil {
-	// 		log.Printf("r.CreateEndpoint() = %v", err)
+	// 		log.Debug("r.CreateEndpoint()", err)
 	// 		return
 	// 	}
 	// 	go udpCallback(gonet.NewUDPConn(&wq, ep), ep)
