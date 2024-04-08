@@ -11,7 +11,7 @@ A VPN implementation written in Go.
 - OS Support: Linux/macOS/Windows multi-platform support.
 - IPv6 Support: All functions work in IPv6.
 - Bypass firewalls: bypass firewalls if they allow http traffic
-- Very Fast: use FastHTTP for high performance
+- Very Fast: use FastHTTP(10x faster than net/http) for high performance
 - Network Stack: Powered by user-space TCP/IP stack from Google **[gVisor](https://github.com/google/gvisor)**.
 
 ## Quickstart
@@ -34,6 +34,9 @@ Users = [
 SSL            = true
 SSLKey         = "server.key"
 SSLCrt         = "server.crt"
+
+# auto on off vpn server  
+Auto           = "08:00-18:00" # Ex: 08:00-18:00 => stat at 08:00 and stop at 18:00
 ```
 Command
 ```
@@ -52,8 +55,8 @@ User           = "user00"
 Pass           = "pass00"
 HostHeader     = "fake.com"
 DNSServer      = ["1.1.1.1"]
-Whitelist 	   = ["10.10.0.1"]
-Blacklist 	   = []
+Whitelist      = ["10.10.0.1"]
+Blacklist      = []
 Public         = true # if set = true require SSL is enabled (SSL = true)
 
 # enable https

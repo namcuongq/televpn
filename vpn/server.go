@@ -96,9 +96,11 @@ func (t *TeleVpnServer) setupCrontab() (err error) {
 				log.Debug("auto off http server")
 				t.Tun2Socket = func(ct core.CommTCPConn, c *websocket.Conn, b []byte) {
 					c.Close()
+					ct.Close()
 				}
 				t.Socket2Tun = func(c *websocket.Conn, ct core.CommTCPConn, b []byte) {
 					c.Close()
+					ct.Close()
 				}
 
 				time.Sleep(sleepStart)
@@ -120,43 +122,6 @@ func (t *TeleVpnServer) setupAuthen() {
 		t.Users[u.Username] = u
 		t.Clients.AddNill(u.Ipaddress)
 	}
-}
-
-func (t *TeleVpnServer) parseKeyUserAddr(authenHeader, token string) ([]byte, string, string, error) {
-	if len(authenHeader) < 1 || len(token) < 1 {
-		return nil, "", "", nil
-	}
-
-	userByte, err := base64.URLEncoding.DecodeString(authenHeader)
-	if err != nil {
-		return nil, "", "", err
-	}
-
-	tokenByte, err := base64.URLEncoding.DecodeString(token)
-	if err != nil {
-		return nil, "", "", err
-	}
-	user := string(userByte)
-	u, found := t.Users[user]
-	if !found {
-		return nil, "", "", nil
-	}
-
-	key := makeKey(u)
-	out, err := network.AESDecrypt(key, tokenByte)
-	if err != nil {
-		return nil, "", "", err
-	}
-	dataKeyAddr := string(out)
-	i := strings.Index(dataKeyAddr, ":")
-	if i < 1 {
-		return nil, "", "", nil
-	}
-
-	sessionKey := dataKeyAddr[:i]
-	addr := dataKeyAddr[i+1:]
-
-	return []byte(sessionKey), user, addr, nil
 }
 
 func (t *TeleVpnServer) startHTTP() error {
@@ -238,12 +203,12 @@ func (t *TeleVpnServer) setupHTTPHandle() {
 				header := network.ParseHeaderPacket(message)
 				dstConn, found := t.Clients.Get(header.IPDst.String())
 				if !found || dstConn == nil {
-					continue
+					break
 				}
 
 				err = dstConn.WriteMessage(websocket.BinaryMessage, message)
 				if err != nil {
-					continue
+					break
 				}
 			}
 
@@ -266,15 +231,51 @@ func (t *TeleVpnServer) setupHTTPHandle() {
 		if err != nil {
 			return
 		}
-		defer currentConn.Close()
 
 		remoteConn, err := net.Dial("tcp", addr)
 		if err != nil {
+			currentConn.Close()
 			return
 		}
-		defer remoteConn.Close()
 
 		go t.Tun2Socket(remoteConn, currentConn, key)
 		t.Socket2Tun(currentConn, remoteConn, key)
 	})
+}
+
+func (t *TeleVpnServer) parseKeyUserAddr(authenHeader, token string) ([]byte, string, string, error) {
+	if len(authenHeader) < 1 || len(token) < 1 {
+		return nil, "", "", nil
+	}
+
+	userByte, err := base64.URLEncoding.DecodeString(authenHeader)
+	if err != nil {
+		return nil, "", "", err
+	}
+
+	tokenByte, err := base64.URLEncoding.DecodeString(token)
+	if err != nil {
+		return nil, "", "", err
+	}
+	user := string(userByte)
+	u, found := t.Users[user]
+	if !found {
+		return nil, "", "", nil
+	}
+
+	key := makeKey(u)
+	out, err := network.AESDecrypt(key, tokenByte)
+	if err != nil {
+		return nil, "", "", err
+	}
+	dataKeyAddr := string(out)
+	i := strings.Index(dataKeyAddr, ":")
+	if i < 1 {
+		return nil, "", "", nil
+	}
+
+	sessionKey := dataKeyAddr[:i]
+	addr := dataKeyAddr[i+1:]
+
+	return []byte(sessionKey), user, addr, nil
 }

@@ -1,11 +1,13 @@
 package vpn
 
 import (
-	"log"
+	loggo "log"
 	"net"
 	"net/http"
+	"strings"
 	"sync"
 	"televpn/core"
+	"televpn/log"
 	"televpn/network"
 
 	"github.com/fasthttp/websocket"
@@ -88,6 +90,18 @@ func makeKey(u User) []byte {
 	return []byte(network.GetMD5Hash(u.Password + u.Ipaddress))
 }
 
-func httpLogger() *log.Logger {
-	return nil
+type httpLogWriter struct{}
+
+func (*httpLogWriter) Write(p []byte) (int, error) {
+	m := string(p)
+	if strings.HasPrefix(m, "http: TLS handshake error") {
+		log.Trace(m)
+	} else {
+		log.Debug(m)
+	}
+	return len(p), nil
+}
+
+func httpLogger() *loggo.Logger {
+	return loggo.New(&httpLogWriter{}, "", 0)
 }

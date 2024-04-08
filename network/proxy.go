@@ -7,6 +7,10 @@ import (
 )
 
 func Tun2SocketWithEn(src core.CommTCPConn, dest *websocket.Conn, key []byte) {
+	defer func() {
+		src.Close()
+		dest.Close()
+	}()
 	size := 32 * 1024
 	buf := make([]byte, size)
 	for {
@@ -18,7 +22,7 @@ func Tun2SocketWithEn(src core.CommTCPConn, dest *websocket.Conn, key []byte) {
 
 		payloadEn, err := AESEncrypt(key, payload)
 		if err != nil {
-			continue
+			break
 		}
 
 		err = dest.WriteMessage(websocket.BinaryMessage, payloadEn)
@@ -29,6 +33,10 @@ func Tun2SocketWithEn(src core.CommTCPConn, dest *websocket.Conn, key []byte) {
 }
 
 func Socket2TunWithEn(src *websocket.Conn, dest core.CommTCPConn, key []byte) {
+	defer func() {
+		src.Close()
+		dest.Close()
+	}()
 	for {
 		_, messageEn, err := src.ReadMessage()
 		if err != nil {
@@ -37,7 +45,7 @@ func Socket2TunWithEn(src *websocket.Conn, dest core.CommTCPConn, key []byte) {
 
 		message, err := AESDecrypt(key, messageEn)
 		if err != nil {
-			continue
+			break
 		}
 
 		_, err = dest.Write(message)
@@ -48,6 +56,10 @@ func Socket2TunWithEn(src *websocket.Conn, dest core.CommTCPConn, key []byte) {
 }
 
 func Tun2Socket(src core.CommTCPConn, dest *websocket.Conn) {
+	defer func() {
+		src.Close()
+		dest.Close()
+	}()
 	size := 32 * 1024
 	buf := make([]byte, size)
 	for {
@@ -65,6 +77,10 @@ func Tun2Socket(src core.CommTCPConn, dest *websocket.Conn) {
 }
 
 func Socket2Tun(src *websocket.Conn, dest core.CommTCPConn) {
+	defer func() {
+		src.Close()
+		dest.Close()
+	}()
 	for {
 		_, message, err := src.ReadMessage()
 		if err != nil {
