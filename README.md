@@ -75,7 +75,7 @@ Command
 
 - [google/gvisor](https://github.com/google/gvisor)
 - [wireguard-go](https://git.zx2c4.com/wireguard-go)
-- [go-tun2socks](https://github.com/eycorsican/go-tun2socks)
+- [go-tun2socks](https://github.com/dosgo/go-tun2socks)
 
 ## Donation
 

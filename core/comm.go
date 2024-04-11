@@ -105,16 +105,16 @@ func NewDefaultStack(mtu int, tcpCallback ForwarderCall, udpCallback UdpForwarde
 	})
 	_netStack.SetTransportProtocolHandler(tcp.ProtocolNumber, tcpForwarder.HandlePacket)
 
-	// udpForwarder := udp.NewForwarder(_netStack, func(r *udp.ForwarderRequest) {
-	// 	var wq waiter.Queue
-	// 	ep, err := r.CreateEndpoint(&wq)
-	// 	if err != nil {
-	// 		log.Debug("r.CreateEndpoint()", err)
-	// 		return
-	// 	}
-	// 	go udpCallback(gonet.NewUDPConn(&wq, ep), ep)
-	// })
-	// _netStack.SetTransportProtocolHandler(udp.ProtocolNumber, udpForwarder.HandlePacket)
+	udpForwarder := udp.NewForwarder(_netStack, func(r *udp.ForwarderRequest) {
+		var wq waiter.Queue
+		ep, err := r.CreateEndpoint(&wq)
+		if err != nil {
+			log.Debug("r.CreateEndpoint()", err)
+			return
+		}
+		go udpCallback(gonet.NewUDPConn(&wq, ep), ep)
+	})
+	_netStack.SetTransportProtocolHandler(udp.ProtocolNumber, udpForwarder.HandlePacket)
 
 	return _netStack, channelLinkID, nil
 }

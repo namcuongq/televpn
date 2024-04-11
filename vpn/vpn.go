@@ -18,6 +18,7 @@ type TeleVpnClient struct {
 
 	defaultDialerWS  *websocket.Dialer
 	defaultDialerTCP net.Dialer
+	defaultDialerUDP net.Dialer
 	urlServerWS      string
 	vpnNetwork       *net.IPNet
 	publicWS         PublicWebSocket

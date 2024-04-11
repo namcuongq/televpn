@@ -237,12 +237,18 @@ func (t *TeleVpnClient) setupDialer(ip string) error {
 		tlsConfig = &tls.Config{InsecureSkipVerify: true}
 	}
 
-	addr, err := net.ResolveTCPAddr("tcp", ip+":0")
+	addrTCP, err := net.ResolveTCPAddr("tcp", ip+":0")
 	if err != nil {
 		return err
 	}
 
-	t.defaultDialerTCP = net.Dialer{LocalAddr: addr, Timeout: 5 * time.Second}
+	addrUDP, err := net.ResolveUDPAddr("udp", ip+":0")
+	if err != nil {
+		return err
+	}
+
+	t.defaultDialerTCP = net.Dialer{LocalAddr: addrTCP, Timeout: 5 * time.Second}
+	t.defaultDialerUDP = net.Dialer{LocalAddr: addrUDP, Timeout: 5 * time.Second}
 	dialer := &t.defaultDialerTCP
 
 	t.defaultDialerWS = websocket.DefaultDialer
@@ -292,7 +298,7 @@ func (t *TeleVpnClient) rawTcpForwarder(conn core.CommTCPConn) error {
 
 func (t *TeleVpnClient) rawUdpForwarder(conn core.CommUDPConn, ep core.CommEndpoint) error {
 	defer conn.Close()
-	remoteConn, err := t.defaultDialerTCP.Dial("udp", conn.LocalAddr().String())
+	remoteConn, err := t.defaultDialerUDP.Dial("udp", conn.LocalAddr().String())
 	if err != nil {
 		return err
 	}
