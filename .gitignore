@@ -2,6 +2,7 @@ config.toml
 main
 main.exe
 server.crt
+server.key
 televpn
 televpn.exe
 test/

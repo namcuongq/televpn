@@ -2,45 +2,14 @@ package vpn
 
 import (
 	"fmt"
+	"strings"
+	"televpn/proxy"
 
 	"github.com/BurntSushi/toml"
 )
 
-type Config struct {
-	Server         string
-	Address        string
-	DefaultGateway string
-	MTU            int
-	TTL            int
-	User           string
-	Pass           string
-	HostHeader     string
-	Public         bool
-
-	DNSServer []string
-
-	Whitelist []string
-	Blacklist []string
-
-	Users []User
-
-	SSL    bool
-	SSLKey string
-	SSLCrt string
-
-	Auto string
-
-	RedirectGateway string
-}
-
-type User struct {
-	Username  string
-	Password  string
-	Ipaddress string
-}
-
-func LoadConfig(path string) (Config, error) {
-	var config Config
+func LoadConfig(path string) (proxy.Config, error) {
+	var config proxy.Config
 	if _, err := toml.DecodeFile(path, &config); err != nil {
 		return config, fmt.Errorf("could not load config: %v", err)
 	}
@@ -51,6 +20,15 @@ func LoadConfig(path string) (Config, error) {
 
 	if config.MTU <= 0 {
 		config.MTU = 1500
+	}
+
+	config.Mode = strings.ToLower(config.Mode)
+	if config.Mode == "" {
+		config.Mode = "tcp"
+	}
+
+	if config.Mode != "tcp" && config.Mode != "ws" {
+		return config, fmt.Errorf("vpn server is not support mode %s", config.Mode)
 	}
 
 	if config.RedirectGateway == "" {

@@ -15,16 +15,16 @@ import (
 	"televpn/core"
 	"televpn/log"
 	"televpn/network"
+	"televpn/proxy"
 	"televpn/tun"
 	"time"
 
-	"github.com/fasthttp/websocket"
 	"gvisor.dev/gvisor/pkg/buffer"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
 	"gvisor.dev/gvisor/pkg/tcpip/stack"
 )
 
-func StartClient(c Config) error {
+func StartClient(c proxy.Config) error {
 	var vpn TeleVpnClient
 	vpn.config = c
 	var tunConfig = tun.Config{
@@ -33,10 +33,6 @@ func StartClient(c Config) error {
 		Addr: c.Address,
 		GW:   c.DefaultGateway,
 		DNS:  c.DNSServer,
-	}
-
-	if !vpn.config.SSL {
-		vpn.config.Public = false
 	}
 
 	dev, err := tun.NewTun(tunConfig)
@@ -68,19 +64,6 @@ func StartClient(c Config) error {
 		return fmt.Errorf("setup whitelist err: %v", err)
 	}
 
-	schema := "ws://"
-	if vpn.config.SSL {
-		schema = "wss://"
-	}
-
-	vpn.urlServerWS = schema + vpn.config.Server
-	go vpn.reconnectPublic(dev)
-	err = vpn.setupPublic(dev)
-	if err != nil {
-		return fmt.Errorf("setup public err: %v", err)
-	}
-	vpn.setProxyFunc()
-
 	return vpn.forwardTransportFromIo(dev, tunConfig.MTU, vpn.rawTcpForwarder, vpn.rawUdpForwarder)
 }
 
@@ -95,101 +78,6 @@ func (t *TeleVpnClient) handleExit() {
 
 func (t *TeleVpnClient) shutdown() {
 	os.Exit(1)
-}
-
-func (t *TeleVpnClient) setProxyFunc() {
-	if t.config.SSL { //ssl don't need encrypt body
-		t.Tun2Socket = func(ct core.CommTCPConn, c *websocket.Conn, b []byte) {
-			network.Tun2Socket(ct, c)
-		}
-		t.Socket2Tun = func(c *websocket.Conn, ct core.CommTCPConn, b []byte) {
-			network.Socket2Tun(c, ct)
-		}
-	} else {
-		t.Tun2Socket = network.Tun2SocketWithEn
-		t.Socket2Tun = network.Socket2TunWithEn
-	}
-}
-
-func (t *TeleVpnClient) reconnectPublic(dev *tun.DevReadWriteCloser) {
-	if t.config.Public {
-		t.chanErrorConnect = make(chan bool, 1)
-		var err error
-		for {
-			<-t.chanErrorConnect
-			for i := 0; i < 3; i++ {
-				time.Sleep(10 * time.Second)
-				log.Info("try reconnect server", i+1, "...")
-				err = t.setupPublic(dev)
-				if err == nil {
-					break
-				}
-				log.Error("error reconnect server", i+1, err)
-			}
-			if err != nil {
-				log.Info("Shutdown vpn!")
-				t.shutdown()
-			}
-			log.Info("Connect server successful!")
-		}
-	}
-}
-
-func (t *TeleVpnClient) setupPublic(dev *tun.DevReadWriteCloser) error {
-	if t.config.Public {
-		tmpKey := network.UUID()
-		authenData, err := network.AESEncrypt(t.key, []byte(tmpKey+":"+t.config.Address))
-		if err != nil {
-			return err
-		}
-
-		conn, err := network.ConnectWebSocket(t.defaultDialerWS,
-			t.urlServerWS+DEFAULT_PATH_VPN,
-			t.config.HostHeader, t.config.User, authenData)
-		if err != nil {
-			log.Error(err)
-			return err
-		}
-
-		t.publicWS = NewPublicWebSocket(conn)
-
-		go func() {
-			for {
-				_, message, err := conn.ReadMessage()
-				if err != nil {
-					break
-				}
-
-				_, err = dev.Write(message)
-				if err != nil {
-					break
-				}
-			}
-		}()
-
-		go func() {
-			ticker := time.NewTicker(time.Duration(t.config.TTL) * time.Second)
-			defer func() {
-				conn.Close()
-				ticker.Stop()
-			}()
-
-			for {
-				select {
-				case <-ticker.C:
-					log.Trace("send ping", conn.RemoteAddr())
-					err := t.publicWS.Send([]byte("ping"))
-					if err != nil {
-						log.Error("send ping error", err)
-						t.chanErrorConnect <- true
-						return
-					}
-				}
-			}
-		}()
-	}
-
-	return nil
 }
 
 func (t *TeleVpnClient) setupWhiteList() error {
@@ -215,26 +103,21 @@ func (t *TeleVpnClient) setupWhiteList() error {
 }
 
 func (t *TeleVpnClient) setupAuthen() {
-	t.key = makeKey(User{Username: t.config.User, Password: t.config.Pass, Ipaddress: t.config.Address})
+	t.key = makeKey(proxy.User{Username: t.config.User, Password: t.config.Pass, Ipaddress: t.config.Address})
 }
 
 func (t *TeleVpnClient) setupDialer(ip string) error {
 	var tlsConfig *tls.Config
-	if t.config.SSL {
-		caCert, err := ioutil.ReadFile(t.config.SSLCrt)
-		if err != nil {
-			return fmt.Errorf("Error opening cert file "+t.config.SSLCrt+", error:", err)
-		}
-		caCertPool := x509.NewCertPool()
-		caCertPool.AppendCertsFromPEM(caCert)
-
-		tlsConfig = &tls.Config{
-			RootCAs:            caCertPool,
-			InsecureSkipVerify: true,
-		}
-
-	} else {
-		tlsConfig = &tls.Config{InsecureSkipVerify: true}
+	caCert, err := ioutil.ReadFile(t.config.SSLCrt)
+	if err != nil {
+		return fmt.Errorf("Error opening cert file "+t.config.SSLCrt+", error:", err)
+	}
+	caCertPool := x509.NewCertPool()
+	caCertPool.AppendCertsFromPEM(caCert)
+	tlsConfig = &tls.Config{
+		ServerName: t.config.HostHeader,
+		RootCAs:    caCertPool,
+		// InsecureSkipVerify: true,
 	}
 
 	addrTCP, err := net.ResolveTCPAddr("tcp", ip+":0")
@@ -249,14 +132,24 @@ func (t *TeleVpnClient) setupDialer(ip string) error {
 
 	t.defaultDialerTCP = net.Dialer{LocalAddr: addrTCP, Timeout: 5 * time.Second}
 	t.defaultDialerUDP = net.Dialer{LocalAddr: addrUDP, Timeout: 5 * time.Second}
-	dialer := &t.defaultDialerTCP
 
-	t.defaultDialerWS = websocket.DefaultDialer
-	t.defaultDialerWS.NetDialContext = func(ctx context.Context, network, addr string) (net.Conn, error) {
-		conn, err := dialer.Dial(network, addr)
-		return conn, err
+	switch t.config.Mode {
+	case "ws":
+		t.proxyClient, err = proxy.NewWSClient(t.config.Address,
+			t.config.HostHeader, t.config.Server,
+			tlsConfig, &t.defaultDialerTCP)
+		if err != nil {
+			return fmt.Errorf("setup proxy client err: %v", err)
+		}
+	case "tcp":
+		t.proxyClient, err = proxy.NewTCPClient(t.config.Address,
+			t.config.HostHeader, t.config.Server,
+			tlsConfig, &t.defaultDialerTCP)
+		if err != nil {
+			return fmt.Errorf("setup proxy client err: %v", err)
+		}
 	}
-	t.defaultDialerWS.TLSClientConfig = tlsConfig
+
 	return nil
 }
 
@@ -275,24 +168,13 @@ func (t *TeleVpnClient) rawTcpForwarder(conn core.CommTCPConn) error {
 		return nil
 	}
 
-	tmpKey := network.UUID()
-	tmpKeyByte := []byte(tmpKey)
-	authenData, err := network.AESEncrypt(t.key, []byte(tmpKey+":"+conn.LocalAddr().String()))
+	textKey := []byte(network.UUID())
+	authenData, err := network.AESEncrypt([]byte(t.key), textKey)
 	if err != nil {
 		return err
 	}
 
-	connSocket, err := network.ConnectWebSocket(t.defaultDialerWS,
-		t.urlServerWS+DEFAULT_PATH,
-		t.config.HostHeader, t.config.User, authenData)
-	if err != nil {
-		log.Debug(err)
-		return err
-	}
-	defer connSocket.Close()
-
-	go t.Tun2Socket(conn, connSocket, tmpKeyByte)
-	t.Socket2Tun(connSocket, conn, tmpKeyByte)
+	t.proxyClient.Forward(conn, authenData)
 	return nil
 }
 
@@ -342,7 +224,7 @@ func (t *TeleVpnClient) forwardTransportFromIo(dev io.ReadWriteCloser, mtu int, 
 
 		packetHeader := network.ParseHeaderPacket(buf[:recvLen])
 		if t.config.Public && t.vpnNetwork.Contains(packetHeader.IPDst) {
-			t.publicWS.Send(buf[:recvLen])
+			// t.publicWS.Send(buf[:recvLen])
 			continue
 		}
 
