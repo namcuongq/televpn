@@ -90,6 +90,7 @@ HostHeader     = "google.com"
 DNSServer      = ["1.1.1.1"]
 Whitelist      = ["10.10.0.1"]
 Public         = true # if set = true require SSL is enabled (SSL = true)
+SkipVerify     = false
 Mode           = "ws" # support "tcp" - "ws"
 
 # ssl

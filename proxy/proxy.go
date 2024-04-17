@@ -15,6 +15,7 @@ type Config struct {
 	Pass           string
 	HostHeader     string
 	Public         bool
+	SkipVerify     bool
 
 	DNSServer []string
 
@@ -46,5 +47,5 @@ type ProxyServer struct {
 }
 
 type ProxyClient struct {
-	Forward func(core.CommTCPConn, []byte) error
+	Forward func(core.CommTCPConn, []byte, []byte) error
 }

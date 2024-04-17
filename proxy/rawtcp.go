@@ -3,7 +3,6 @@ package proxy
 import (
 	"crypto/tls"
 	"fmt"
-	"io"
 	"net"
 	"televpn/core"
 	"televpn/log"
@@ -44,7 +43,7 @@ func NewTCPClient(ipSrc, serverName, server string, tlsConfig *tls.Config, diale
 	}, nil
 }
 
-func (p RawTCPClient) Forward(src core.CommTCPConn, sessionKey []byte) error {
+func (p RawTCPClient) Forward(src core.CommTCPConn, key, sessionKey []byte) error {
 	defer src.Close()
 	addr, _ := net.ResolveTCPAddr("tcp", src.LocalAddr().String())
 	var port [2]int
@@ -63,18 +62,18 @@ func (p RawTCPClient) Forward(src core.CommTCPConn, sessionKey []byte) error {
 	header = append(header, byte(port[0]))
 	header = append(header, byte(port[1]))
 
-	conn, err := tls.DialWithDialer(p.dialer, "tcp", p.server, p.tlsConfig)
+	dest, err := tls.DialWithDialer(p.dialer, "tcp", p.server, p.tlsConfig)
 	if err != nil {
 		log.Trace(err)
 		return err
 	}
-	defer conn.Close()
+	defer dest.Close()
 
-	err = conn.SetWriteDeadline(time.Now().Add(5 * time.Second))
+	err = dest.SetWriteDeadline(time.Now().Add(5 * time.Second))
 	if err != nil {
 		return err
 	}
-	_, err = conn.Write(header)
+	_, err = dest.Write(header)
 	if err != nil {
 		return err
 	}
@@ -84,7 +83,7 @@ func (p RawTCPClient) Forward(src core.CommTCPConn, sessionKey []byte) error {
 	}
 
 	flag := make([]byte, 1)
-	err = network.ReadFull(conn, flag, 5*time.Second)
+	err = network.ReadFull(dest, flag, 5*time.Second)
 	if err != nil {
 		return err
 	}
@@ -92,12 +91,11 @@ func (p RawTCPClient) Forward(src core.CommTCPConn, sessionKey []byte) error {
 	switch flag[0] {
 	case TCP_STATUS_200:
 		go func() {
-			io.Copy(src, conn)
+			network.SendEn(dest, src, key)
 			src.Close()
-			conn.Close()
+			dest.Close()
 		}()
-
-		io.Copy(conn, src)
+		network.ReadDe(src, dest, key)
 	case TCP_STATUS_401:
 		log.Trace("Authen failed!")
 		return fmt.Errorf("Authen failed!")
@@ -193,7 +191,7 @@ func (s *RawTCPServer) handleConnection(src net.Conn) {
 		return
 	}
 
-	_, err = network.AESDecrypt([]byte(network.GetMD5Hash(u.Username+u.Password)), authen)
+	key, err := network.AESDecrypt([]byte(network.GetMD5Hash(u.Username+u.Password)), authen)
 	if err != nil {
 		s.sendAuthenFailed(src)
 		return
@@ -207,11 +205,12 @@ func (s *RawTCPServer) handleConnection(src net.Conn) {
 	defer dst.Close()
 
 	go func() {
-		io.Copy(dst, src)
+		network.ReadDe(dst, src, key)
 		src.Close()
 		dst.Close()
 	}()
-	io.Copy(src, dst)
+
+	network.SendEn(src, dst, key)
 }
 
 func (s *RawTCPServer) sendAuthenFailed(src net.Conn) error {

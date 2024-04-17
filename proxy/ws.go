@@ -5,7 +5,6 @@ import (
 	"crypto/tls"
 	"encoding/base64"
 	"fmt"
-	"io"
 	"net"
 	"net/http"
 	"strings"
@@ -61,7 +60,7 @@ func NewWSClient(ipSrc, serverName, server string, tlsConfig *tls.Config, dialer
 	}, nil
 }
 
-func (p WSClient) Forward(src core.CommTCPConn, sessionKey []byte) error {
+func (p WSClient) Forward(src core.CommTCPConn, key, sessionKey []byte) error {
 	defer src.Close()
 	connSocket, resp, err := p.dialer.Dial(
 		"wss://"+p.server+"/start1.html",
@@ -80,12 +79,12 @@ func (p WSClient) Forward(src core.CommTCPConn, sessionKey []byte) error {
 	switch resp.StatusCode {
 	case http.StatusSwitchingProtocols:
 		go func() {
-			io.Copy(connSocket.NetConn(), src)
+			network.ReadDe(src, connSocket.NetConn(), key)
 			connSocket.Close()
 			src.Close()
 		}()
 
-		io.Copy(src, connSocket.NetConn())
+		network.SendEn(connSocket.NetConn(), src, key)
 	case http.StatusUnauthorized:
 		log.Trace("Authen failed!")
 		return fmt.Errorf("Authen failed!")
@@ -130,7 +129,7 @@ func NewWSServer(config Config) (*ProxyServer, error) {
 			return
 		}
 
-		_, err = network.AESDecrypt([]byte(network.GetMD5Hash(u.Username+u.Password)), tokenByte)
+		key, err := network.AESDecrypt([]byte(network.GetMD5Hash(u.Username+u.Password)), tokenByte)
 		if err != nil {
 			w.WriteHeader(http.StatusUnauthorized)
 			return
@@ -140,7 +139,7 @@ func NewWSServer(config Config) (*ProxyServer, error) {
 			w.WriteHeader(http.StatusInternalServerError)
 			return
 		}
-		fmt.Println("aaaaaaaaaa")
+
 		currentConn, err := upgrader.Upgrade(w, r, nil)
 		if err != nil {
 			fmt.Println(err)
@@ -155,12 +154,12 @@ func NewWSServer(config Config) (*ProxyServer, error) {
 		defer remoteConn.Close()
 
 		go func() {
-			io.Copy(currentConn.NetConn(), remoteConn)
+			network.ReadDe(remoteConn, currentConn.NetConn(), key)
 			currentConn.Close()
 			remoteConn.Close()
 		}()
 
-		io.Copy(remoteConn, currentConn.NetConn())
+		network.SendEn(currentConn.NetConn(), remoteConn, key)
 	})
 
 	s.ln = &http.Server{Addr: config.Server, Handler: &slashFix{httpMux}, ErrorLog: nil}

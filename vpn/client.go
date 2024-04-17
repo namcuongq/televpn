@@ -115,9 +115,9 @@ func (t *TeleVpnClient) setupDialer(ip string) error {
 	caCertPool := x509.NewCertPool()
 	caCertPool.AppendCertsFromPEM(caCert)
 	tlsConfig = &tls.Config{
-		ServerName: t.config.HostHeader,
-		RootCAs:    caCertPool,
-		// InsecureSkipVerify: true,
+		ServerName:         t.config.HostHeader,
+		RootCAs:            caCertPool,
+		InsecureSkipVerify: t.config.SkipVerify,
 	}
 
 	addrTCP, err := net.ResolveTCPAddr("tcp", ip+":0")
@@ -174,7 +174,7 @@ func (t *TeleVpnClient) rawTcpForwarder(conn core.CommTCPConn) error {
 		return err
 	}
 
-	t.proxyClient.Forward(conn, authenData)
+	t.proxyClient.Forward(conn, textKey, authenData)
 	return nil
 }
 
