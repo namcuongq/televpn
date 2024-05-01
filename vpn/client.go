@@ -118,6 +118,7 @@ func (t *TeleVpnClient) setupDialer(ip string) error {
 		ServerName:         t.config.HostHeader,
 		RootCAs:            caCertPool,
 		InsecureSkipVerify: t.config.SkipVerify,
+		MaxVersion:         tls.VersionTLS12,
 	}
 
 	addrTCP, err := net.ResolveTCPAddr("tcp", ip+":0")
@@ -130,8 +131,8 @@ func (t *TeleVpnClient) setupDialer(ip string) error {
 		return err
 	}
 
-	t.defaultDialerTCP = net.Dialer{LocalAddr: addrTCP, Timeout: 5 * time.Second}
-	t.defaultDialerUDP = net.Dialer{LocalAddr: addrUDP, Timeout: 5 * time.Second}
+	t.defaultDialerTCP = net.Dialer{LocalAddr: addrTCP, Timeout: 15 * time.Second}
+	t.defaultDialerUDP = net.Dialer{LocalAddr: addrUDP, Timeout: 15 * time.Second}
 
 	switch t.config.Mode {
 	case "ws":

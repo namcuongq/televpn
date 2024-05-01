@@ -24,7 +24,7 @@ func LoadConfig(path string) (proxy.Config, error) {
 
 	config.Mode = strings.ToLower(config.Mode)
 	if config.Mode == "" {
-		config.Mode = "tcp"
+		config.Mode = "ws"
 	}
 
 	if config.Mode != "tcp" && config.Mode != "ws" {

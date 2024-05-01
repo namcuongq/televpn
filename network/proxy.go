@@ -2,6 +2,7 @@ package network
 
 import (
 	"io"
+	"log"
 	"net"
 	"time"
 )
@@ -50,8 +51,12 @@ func SendEn(dst io.Writer, src io.Reader, key []byte) {
 			l = len(m)
 			header[0], header[1] = byte(l>>8), byte(l&255)
 
+			now := time.Now()
 			_, er = dst.Write(header)
 			if er != nil {
+				log.Println(33, er, time.Since(now))
+				_, er = dst.Write(header)
+				log.Println(er)
 				break
 			}
 
@@ -70,6 +75,7 @@ func ReadDe(dst io.Writer, src io.Reader, key []byte) {
 	for {
 		err := ReadN(src, buf, 2)
 		if err != nil {
+			log.Println(1, err)
 			break
 		}
 		nr := int(buf[0])<<8 + int(buf[1])

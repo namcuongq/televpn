@@ -69,6 +69,7 @@ func (p WSClient) Forward(src core.CommTCPConn, key, sessionKey []byte) error {
 			"X-Forwarded-For": []string{p.ip},
 			"X-Id":            []string{base64.URLEncoding.EncodeToString(sessionKey)},
 			"Via":             []string{src.LocalAddr().String()},
+			"Host":            []string{p.serverName},
 		})
 	if err != nil {
 		log.Trace(err)
