@@ -9,6 +9,7 @@ import (
 	"io/ioutil"
 	"net"
 	"os"
+	"os/exec"
 	"os/signal"
 	"strings"
 	"syscall"
@@ -59,7 +60,7 @@ func StartClient(c proxy.Config) error {
 
 	vpn.setupAuthen()
 	vpn.handleExit()
-	err = vpn.setupWhiteList()
+	err = vpn.setupWhiteList(currentGw.Gateway)
 	if err != nil {
 		return fmt.Errorf("setup whitelist err: %v", err)
 	}
@@ -77,12 +78,27 @@ func (t *TeleVpnClient) handleExit() {
 }
 
 func (t *TeleVpnClient) shutdown() {
+	for _, ip := range t.config.Whitelist {
+		routeCmd := exec.Command("route", "delete", ip)
+		log.Debug("route", "delete", ip)
+		output, err := routeCmd.CombinedOutput()
+		if err != nil {
+			log.Error("route delete err:", ip, err, string(output))
+		}
+	}
 	os.Exit(1)
 }
 
-func (t *TeleVpnClient) setupWhiteList() error {
+func (t *TeleVpnClient) setupWhiteList(gateway string) error {
 	t.Whitelist = make(map[string]bool)
 	for _, ip := range t.config.Whitelist {
+		log.Debug("route", "add", network.GetIp(ip), "mask", network.CIDRToMask(ip), gateway, "metric", "1")
+		routeCmd := exec.Command("route", "add", network.GetIp(ip), "mask", network.CIDRToMask(ip), gateway, "metric", "1")
+		output, err := routeCmd.CombinedOutput()
+		if err != nil {
+			return fmt.Errorf("route traffic to tun err: %v %s", err, string(output))
+		}
+
 		if !strings.Contains(ip, "/") {
 			t.Whitelist[ip] = true
 			continue
@@ -159,6 +175,7 @@ func (t *TeleVpnClient) rawTcpForwarder(conn core.CommTCPConn) error {
 	destIP := network.GetIp(conn.LocalAddr().String())
 	_, found := t.Whitelist[destIP]
 	if found {
+		return nil
 		remoteConn, err := t.defaultDialerTCP.Dial("tcp", conn.LocalAddr().String())
 		if err != nil {
 			return err

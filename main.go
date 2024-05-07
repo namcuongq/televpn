@@ -15,8 +15,8 @@ var (
 )
 
 const (
-	VERSION = "2.1.1"
-	RELEASE = "(01/05/2024)"
+	VERSION = "2.1.2"
+	RELEASE = "(07/05/2024)"
 )
 
 func main() {
@@ -48,6 +48,6 @@ func main() {
 func init() {
 	flag.StringVar(&configPath, "config", "config.toml", "location of the config file")
 	flag.BoolVar(&ServerMode, "S", false, "server mode")
-	flag.IntVar(&logLevel, "l", log.LevelInfo, "log level: [1-DEBUG 2-INFO 3-ERROR]")
+	flag.IntVar(&logLevel, "l", log.LevelInfo, "log level: [0-TRACE 1-DEBUG 2-INFO 3-ERROR]")
 	runtime.GOMAXPROCS(runtime.NumCPU())
 }
